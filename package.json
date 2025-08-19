@@ -3,22 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev1": "next dev --turbopack",
+    "dev": "next dev --host 0.0.0.0 --port 3000 --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@auth/core": "^0.40.0",
-    "@auth/prisma-adapter": "^2.10.0",
-    "@prisma/client": "^6.13.0",
     "@prisma/extension-accelerate": "^2.0.2",
-    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.55.0",
     "ioredis": "^5.7.0",
     "next": "15.4.5",
     "next-auth": "^5.0.0-beta.29",
-    "prisma": "^6.13.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "redis": "^5.8.1"
