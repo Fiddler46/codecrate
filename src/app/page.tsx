@@ -1,86 +1,254 @@
-// app/snippets/new/page.tsx
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
+import type { User } from '@supabase/auth-helpers-nextjs'
 
-export default function NewSnippetPage() {
+interface Snippet {
+  id: string
+  title: string
+  content: string
+  language: string
+  tags: string[]
+  created_at: string
+}
+
+export default function HomePage() {
   const router = useRouter()
-
+  const supabase = createClient()
+  
+  const [user, setUser] = useState<User | null>(null)
+  const [snippets, setSnippets] = useState<Snippet[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  
+  // Form states
   const [title, setTitle] = useState('')
   const [language, setLanguage] = useState('')
   const [tags, setTags] = useState('')
   const [content, setContent] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+      
+      if (!user) {
+        router.push('/login')
+      } else {
+        fetchSnippets()
+      }
+      setLoading(false)
+    }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+    getUser()
+  }, [])
 
-    const res = await fetch('/api/snippets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        language,
-        tags: tags.split(',').map(tag => tag.trim()),
-        content,
-      }),
-    })
-
-    setLoading(false)
-
-    if (res.ok) {
-      router.push('/')
-    } else {
-      alert('Something went wrong!')
+  const fetchSnippets = async (search?: string) => {
+    try {
+      const url = search ? `/api/snippets?search=${encodeURIComponent(search)}` : '/api/snippets'
+      const res = await fetch(url)
+      
+      if (res.ok) {
+        const data = await res.json()
+        setSnippets(data)
+      }
+    } catch (error) {
+      console.error('Error fetching snippets:', error)
     }
   }
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    fetchSnippets(searchQuery)
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  const handleCreateSnippet = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreating(true)
+
+    try {
+      const res = await fetch('/api/snippets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          language,
+          tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
+          content,
+        }),
+      })
+
+      if (res.ok) {
+        setTitle('')
+        setLanguage('')
+        setTags('')
+        setContent('')
+        setShowCreateForm(false)
+        fetchSnippets()
+      } else {
+        alert('Failed to create snippet!')
+      }
+    } catch (error) {
+      console.error('Error creating snippet:', error)
+      alert('Error creating snippet!')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return null
+  }
+
   return (
-    <div className="max-w-2xl mx-auto mt-10 p-4">
-      <h1 className="text-2xl font-semibold mb-4">Create New Snippet</h1>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <input
-          type="text"
-          placeholder="Title"
-          className="p-2 border rounded"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
-        <input
-          type="text"
-          placeholder="Language (e.g. JavaScript)"
-          className="p-2 border rounded"
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          required
-        />
-        <input
-          type="text"
-          placeholder="Tags (comma-separated)"
-          className="p-2 border rounded"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-        />
-        <textarea
-          placeholder="Code..."
-          className="p-2 border rounded h-48 font-mono"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          required
-        />
-        <button
-          type="submit"
-          className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 disabled:opacity-50"
-          disabled={loading}
-        >
-          {loading ? 'Saving...' : 'Save Snippet'}
-        </button>
-      </form>
+    <div className="min-h-screen bg-zinc-50">
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <h1 className="text-2xl font-bold text-zinc-900">CodeCrate</h1>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-zinc-600">Welcome, {user.user_metadata?.full_name || user.email}</span>
+              <button
+                onClick={handleSignOut}
+                className="text-sm text-zinc-600 hover:text-zinc-900"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <div className="flex gap-4 mb-4">
+            <form onSubmit={handleSearch} className="flex-1 flex gap-2">
+              <input
+                type="text"
+                placeholder="Search snippets by title or tags..."
+                className="flex-1 p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="px-6 py-3 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800"
+              >
+                Search
+              </button>
+            </form>
+            <button
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              {showCreateForm ? 'Cancel' : 'New Snippet'}
+            </button>
+          </div>
+
+          {showCreateForm && (
+            <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
+              <h2 className="text-xl font-semibold mb-4">Create New Snippet</h2>
+              <form onSubmit={handleCreateSnippet} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Title"
+                  className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Language (e.g. JavaScript)"
+                  className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Tags (comma-separated)"
+                  className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                />
+                <textarea
+                  placeholder="Code..."
+                  className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  required
+                />
+                <button
+                  type="submit"
+                  className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  disabled={creating}
+                >
+                  {creating ? 'Creating...' : 'Create Snippet'}
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {snippets.map((snippet) => (
+            <div key={snippet.id} className="bg-white p-6 rounded-lg shadow-sm border">
+              <div className="mb-3">
+                <h3 className="text-lg font-semibold text-zinc-900">{snippet.title}</h3>
+                <span className="text-sm text-zinc-500">{snippet.language}</span>
+              </div>
+              
+              {snippet.tags.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-1">
+                  {snippet.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-2 py-1 bg-zinc-100 text-zinc-700 text-xs rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              
+              <pre className="bg-zinc-50 p-3 rounded text-sm overflow-x-auto font-mono">
+                <code>{snippet.content}</code>
+              </pre>
+              
+              <div className="mt-3 text-xs text-zinc-500">
+                {new Date(snippet.created_at).toLocaleDateString()}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {snippets.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-zinc-500">
+              {searchQuery ? 'No snippets found for your search.' : 'No snippets yet. Create your first one!'}
+            </p>
+          </div>
+        )}
+      </main>
     </div>
   )
 }

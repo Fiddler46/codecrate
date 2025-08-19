@@ -1,49 +1,92 @@
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CodeCrate
+
+A bookmarking tool for developers to save code snippets with tags and titles. Built with Next.js, Supabase, and Redis.
+
+## Features
+
+- GitHub authentication via Supabase
+- Save code snippets with titles, languages, and tags
+- Search through snippets by title or tags
+- Redis caching for improved performance
 
 ## Getting Started
-- Ensure you have all the following `env` variables created at the root folder:
 
+### Environment Variables
+
+Create a `.env.local` file in the root directory with the following variables:
+
+```env
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Redis Configuration (optional - defaults to localhost)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=your_redis_password
 ```
-# Prisma Database URL (MySQL/PostgreSQL/SQL Server)
-DATABASE_URL=""
 
-# GitHub OAuth (create in GitHub Developer Settings)
-GITHUB_ID=""
-GITHUB_SECRET=""
+### Supabase Setup
 
-# NextAuth secret for signing (use a long random string, add through `npx auth`)
-NEXTAUTH_SECRET=""
+1. Create a new Supabase project at [supabase.com](https://supabase.com)
+2. In your Supabase dashboard, go to SQL Editor and run this SQL to create the snippets table:
+
+```sql
+create table snippets (
+  id uuid default gen_random_uuid() primary key,
+  title text not null,
+  content text not null,
+  language text not null,
+  tags text[] default '{}',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  user_id uuid references auth.users(id) on delete cascade not null
+);
+
+-- Enable Row Level Security
+alter table snippets enable row level security;
+
+-- Create policy so users can only see their own snippets
+create policy "Users can view their own snippets" on snippets
+  for select using (auth.uid() = user_id);
+
+create policy "Users can insert their own snippets" on snippets
+  for insert with check (auth.uid() = user_id);
+
+create policy "Users can update their own snippets" on snippets
+  for update using (auth.uid() = user_id);
+
+create policy "Users can delete their own snippets" on snippets
+  for delete using (auth.uid() = user_id);
 ```
 
-- Run the following commands after to start the Prisma client and migrate the DB:
+3. Enable GitHub authentication in Supabase:
+   - Go to Authentication > Settings
+   - Configure GitHub OAuth with your GitHub app credentials
+
+### Redis Setup
+
+For Redis, you can either:
+- Run Redis locally: `redis-server`
+- Use a cloud Redis service like Redis Cloud or Upstash
+- For development, Redis is optional (the app will work without caching)
+
+### Installation
 
 ```bash
-npx prisma generate --no-engine
-npx prisma migrate dev --name init
+npm install
 ```
 
-- Run the development server:
+### Running the Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000) to see the application.
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Supabase Documentation](https://supabase.com/docs)
+- [Redis Documentation](https://redis.io/docs)

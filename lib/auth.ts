@@ -1,17 +1,31 @@
-import NextAuth from "next-auth"
-import { PrismaAdapter } from "@auth/prisma-adapter"
-import { prisma } from "./prisma"
-import GitHub from "next-auth/providers/github"
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
-  providers: [
-    GitHub({
-      clientId: process.env.GITHUB_ID!,
-      clientSecret: process.env.GITHUB_SECRET!,
-    })
-  ],
-  session: { strategy: 'database' },
-  secret: process.env.NEXTAUTH_SECRET,
-  pages: { signIn: '/login' }
-})
+import { createServerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from './supabase'
+
+export const createClient = () => {
+  const cookieStore = cookies()
+
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    }
+  )
+}
+
+export const getUser = async () => {
+  const supabase = createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  
+  if (error || !user) {
+    return null
+  }
+  
+  return user
+}
