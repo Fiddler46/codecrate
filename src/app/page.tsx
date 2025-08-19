@@ -2,9 +2,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
-import type { User } from '@supabase/auth-helpers-nextjs'
+import type { User } from '@supabase/supabase-js'
 
 interface Snippet {
   id: string

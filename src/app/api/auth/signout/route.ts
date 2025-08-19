@@ -1,12 +1,15 @@
 
-import { createClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
-  const requestUrl = new URL(request.url)
   const supabase = createClient()
 
-  await supabase.auth.signOut()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  return NextResponse.redirect(`${requestUrl.origin}/login`)
+  if (user) {
+    await supabase.auth.signOut()
+  }
+
+  return NextResponse.redirect(new URL('/login', request.url))
 }
