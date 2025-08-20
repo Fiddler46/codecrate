@@ -4,14 +4,13 @@
   "private": true,
   "scripts": {
     "dev1": "next dev --turbopack",
-    "dev": "next dev --host 0.0.0.0 --port 3000 --turbopack",
+    "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@auth/core": "^0.40.0",
-    "@prisma/extension-accelerate": "^2.0.2",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.55.0",
     "ioredis": "^5.7.0",
