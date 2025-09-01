@@ -1,10 +1,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/auth'
-import { redis, CACHE_KEYS, CACHE_TTL } from '@/lib/redis'
+import { createClient } from '../../../../lib/auth'
+import { redis, CACHE_KEYS, CACHE_TTL } from '../../../../lib/redis'
 
 export async function GET(request: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
