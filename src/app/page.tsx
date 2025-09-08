@@ -253,34 +253,52 @@ export default function HomePage() {
                   onChange={(e) => setTags(e.target.value)}
                 />
                 <div className="relative">
-                  <textarea
-                    ref={textareaRef}
-                    placeholder="Write your code here..."
-                    className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent relative z-10 text-transparent caret-white"
-                    value={content}
-                    onChange={handleInput}
-                    onScroll={handleScroll}
-                    required
-                    style={{
-                      color: 'transparent',
-                      caretColor: '#000',
-                      lineHeight: '1.5',
-                      fontSize: '14px',
-                      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
-                    }}
-                  />
-                  <div
-                    ref={preRef}
-                    className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg"
-                    style={{
-                      lineHeight: '1.5',
-                      fontSize: '14px',
-                      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
-                    }}
-                    dangerouslySetInnerHTML={{
-                      __html: highlightedCode || `<pre><code style="color: #6b7280;">${content || 'Write your code here...'}</code></pre>`
-                    }}
-                  />
+                  {highlightedCode ? (
+                    <div className="relative">
+                      <textarea
+                        ref={textareaRef}
+                        placeholder="Write your code here..."
+                        className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent relative z-10 text-transparent caret-black"
+                        value={content}
+                        onChange={handleInput}
+                        onScroll={handleScroll}
+                        required
+                        style={{
+                          color: 'transparent',
+                          caretColor: '#000',
+                          lineHeight: '1.5',
+                          fontSize: '14px',
+                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+                        }}
+                      />
+                      <div
+                        ref={preRef}
+                        className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg border border-transparent"
+                        style={{
+                          lineHeight: '1.5',
+                          fontSize: '14px',
+                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+                        }}
+                        dangerouslySetInnerHTML={{
+                          __html: highlightedCode
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <textarea
+                      ref={textareaRef}
+                      placeholder="Write your code here..."
+                      className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white text-gray-900"
+                      value={content}
+                      onChange={handleInput}
+                      required
+                      style={{
+                        lineHeight: '1.5',
+                        fontSize: '14px',
+                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+                      }}
+                    />
+                  )}
                 </div>
                 <button
                   type="submit"
@@ -330,7 +348,7 @@ export default function HomePage() {
                 )}
                 
                 <div
-                  className="text-sm overflow-x-auto rounded"
+                  className="snippet-code text-sm overflow-x-auto rounded"
                   dangerouslySetInnerHTML={{
                     __html: highlightedSnippet
                   }}
