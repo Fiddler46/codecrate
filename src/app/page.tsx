@@ -58,7 +58,7 @@ export default function HomePage() {
   useEffect(() => {
     const initHighlighter = async () => {
       try {
-        const highlighterInstance = await getHighlighter({
+        const highlighterInstance = await createHighlighter({
           themes: ['github-dark', 'github-light'],
           langs: ['javascript', 'typescript', 'python', 'java', 'cpp', 'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml'],
         })
