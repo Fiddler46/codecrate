@@ -5,8 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '../../lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
-import { createHighlighter } from 'shiki'
-import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
+import { createHighlighter, type Highlighter } from 'shiki'
 
 interface Snippet {
   id: string
@@ -35,13 +34,10 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false)
   
   // Shiki states
-  const [highlighter, setHighlighter] = useState(null)
-  const [highlighter, setHighlighter] = useState(null)
+  const [highlighter, setHighlighter] = useState<Highlighter | null>(null)
   const [highlightedCode, setHighlightedCode] = useState('')
-  const textareaRef = useRef(null)
-  const preRef = useRef(null)
-  const textareaRef = useRef(null)
-  const preRef = useRef(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const preRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const getUser = async () => {
@@ -65,7 +61,6 @@ export default function HomePage() {
         const highlighterInstance = await getHighlighter({
           themes: ['github-dark', 'github-light'],
           langs: ['javascript', 'typescript', 'python', 'java', 'cpp', 'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml'],
-          engine: createOnigurumaEngine(() => import('shiki/wasm')),
         })
         setHighlighter(highlighterInstance)
       } catch (error) {
@@ -85,6 +80,7 @@ export default function HomePage() {
         })
         setHighlightedCode(highlighted)
       } catch (error) {
+        console.error('Highlighting error:', error)
         setHighlightedCode(`<pre><code>${content}</code></pre>`)
       }
     } else {
@@ -157,8 +153,7 @@ export default function HomePage() {
     }
   }
 
-  const handleInput = (e) => {
-  const handleInput = (e) => {
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value)
   }
 
@@ -309,6 +304,7 @@ export default function HomePage() {
                   theme: 'github-light'
                 })
               } catch (error) {
+                console.error('Snippet highlighting error:', error)
                 highlightedSnippet = `<pre><code>${snippet.content}</code></pre>`
               }
             }
