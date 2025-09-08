@@ -1,4 +1,28 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Shiki code editor styles */
+.shiki {
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.shiki pre {
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+
+.shiki code {
+  background: transparent !important;
+  padding: 0 !important;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
 
 :root {
   --background: #ffffff;

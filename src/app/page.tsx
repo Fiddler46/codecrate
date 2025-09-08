@@ -1,10 +1,11 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '../../lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
+import { getHighlighter } from 'shiki'
 
 interface Snippet {
   id: string
@@ -27,10 +28,16 @@ export default function HomePage() {
   
   // Form states
   const [title, setTitle] = useState('')
-  const [language, setLanguage] = useState('')
+  const [language, setLanguage] = useState('javascript')
   const [tags, setTags] = useState('')
   const [content, setContent] = useState('')
   const [creating, setCreating] = useState(false)
+  
+  // Shiki states
+  const [highlighter, setHighlighter] = useState(null)
+  const [highlightedCode, setHighlightedCode] = useState('')
+  const textareaRef = useRef(null)
+  const preRef = useRef(null)
 
   useEffect(() => {
     const getUser = async () => {
@@ -47,6 +54,38 @@ export default function HomePage() {
 
     getUser()
   }, [])
+
+  useEffect(() => {
+    const initHighlighter = async () => {
+      try {
+        const highlighterInstance = await getHighlighter({
+          themes: ['github-dark', 'github-light'],
+          langs: ['javascript', 'typescript', 'python', 'java', 'cpp', 'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml']
+        })
+        setHighlighter(highlighterInstance)
+      } catch (error) {
+        console.error('Failed to initialize highlighter:', error)
+      }
+    }
+    
+    initHighlighter()
+  }, [])
+
+  useEffect(() => {
+    if (highlighter && content) {
+      try {
+        const highlighted = highlighter.codeToHtml(content, {
+          lang: language.toLowerCase(),
+          theme: 'github-dark'
+        })
+        setHighlightedCode(highlighted)
+      } catch (error) {
+        setHighlightedCode(`<pre><code>${content}</code></pre>`)
+      }
+    } else {
+      setHighlightedCode('')
+    }
+  }, [highlighter, content, language])
 
   const fetchSnippets = async (search?: string) => {
     try {
@@ -90,7 +129,7 @@ export default function HomePage() {
 
       if (res.ok) {
         setTitle('')
-        setLanguage('')
+        setLanguage('javascript')
         setTags('')
         setContent('')
         setShowCreateForm(false)
@@ -104,6 +143,17 @@ export default function HomePage() {
     } finally {
       setCreating(false)
     }
+  }
+
+  const handleScroll = () => {
+    if (textareaRef.current && preRef.current) {
+      preRef.current.scrollTop = textareaRef.current.scrollTop
+      preRef.current.scrollLeft = textareaRef.current.scrollLeft
+    }
+  }
+
+  const handleInput = (e) => {
+    setContent(e.target.value)
   }
 
   if (loading) {
@@ -175,14 +225,25 @@ export default function HomePage() {
                   onChange={(e) => setTitle(e.target.value)}
                   required
                 />
-                <input
-                  type="text"
-                  placeholder="Language (e.g. JavaScript)"
+                <select
                   className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
                   required
-                />
+                >
+                  <option value="javascript">JavaScript</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="python">Python</option>
+                  <option value="java">Java</option>
+                  <option value="cpp">C++</option>
+                  <option value="css">CSS</option>
+                  <option value="html">HTML</option>
+                  <option value="json">JSON</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="sql">SQL</option>
+                  <option value="bash">Bash</option>
+                  <option value="yaml">YAML</option>
+                </select>
                 <input
                   type="text"
                   placeholder="Tags (comma-separated)"
@@ -190,13 +251,36 @@ export default function HomePage() {
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                 />
-                <textarea
-                  placeholder="Code..."
-                  className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <textarea
+                    ref={textareaRef}
+                    placeholder="Write your code here..."
+                    className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent relative z-10 text-transparent caret-white"
+                    value={content}
+                    onChange={handleInput}
+                    onScroll={handleScroll}
+                    required
+                    style={{
+                      color: 'transparent',
+                      caretColor: '#000',
+                      lineHeight: '1.5',
+                      fontSize: '14px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+                    }}
+                  />
+                  <div
+                    ref={preRef}
+                    className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg"
+                    style={{
+                      lineHeight: '1.5',
+                      fontSize: '14px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: highlightedCode || `<pre><code style="color: #6b7280;">${content || 'Write your code here...'}</code></pre>`
+                    }}
+                  />
+                </div>
                 <button
                   type="submit"
                   className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50"
@@ -210,35 +294,52 @@ export default function HomePage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {snippets.map((snippet) => (
-            <div key={snippet.id} className="bg-white p-6 rounded-lg shadow-sm border">
-              <div className="mb-3">
-                <h3 className="text-lg font-semibold text-zinc-900">{snippet.title}</h3>
-                <span className="text-sm text-zinc-500">{snippet.language}</span>
-              </div>
-              
-              {snippet.tags.length > 0 && (
-                <div className="mb-3 flex flex-wrap gap-1">
-                  {snippet.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="px-2 py-1 bg-zinc-100 text-zinc-700 text-xs rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
+          {snippets.map((snippet) => {
+            let highlightedSnippet = snippet.content
+            if (highlighter) {
+              try {
+                highlightedSnippet = highlighter.codeToHtml(snippet.content, {
+                  lang: snippet.language.toLowerCase(),
+                  theme: 'github-light'
+                })
+              } catch (error) {
+                highlightedSnippet = `<pre><code>${snippet.content}</code></pre>`
+              }
+            }
+            
+            return (
+              <div key={snippet.id} className="bg-white p-6 rounded-lg shadow-sm border">
+                <div className="mb-3">
+                  <h3 className="text-lg font-semibold text-zinc-900">{snippet.title}</h3>
+                  <span className="text-sm text-zinc-500">{snippet.language}</span>
                 </div>
-              )}
-              
-              <pre className="bg-zinc-50 p-3 rounded text-sm overflow-x-auto font-mono">
-                <code>{snippet.content}</code>
-              </pre>
-              
-              <div className="mt-3 text-xs text-zinc-500">
-                {new Date(snippet.created_at).toLocaleDateString()}
+                
+                {snippet.tags.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-1">
+                    {snippet.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-2 py-1 bg-zinc-100 text-zinc-700 text-xs rounded"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                
+                <div
+                  className="text-sm overflow-x-auto rounded"
+                  dangerouslySetInnerHTML={{
+                    __html: highlightedSnippet
+                  }}
+                />
+                
+                <div className="mt-3 text-xs text-zinc-500">
+                  {new Date(snippet.created_at).toLocaleDateString()}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {snippets.length === 0 && (
