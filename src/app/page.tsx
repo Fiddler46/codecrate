@@ -5,7 +5,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '../../lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
-import { createHighlighter, type HighlighterGeneric, type BundledLanguage, type BundledTheme } from 'shiki'
+import { createHighlighter } from 'shiki'
+import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
 
 interface Snippet {
   id: string
@@ -34,10 +35,10 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false)
   
   // Shiki states
-  const [highlighter, setHighlighter] = useState<HighlighterGeneric<BundledLanguage, BundledTheme> | null>(null)
+  const [highlighter, setHighlighter] = useState(null)
   const [highlightedCode, setHighlightedCode] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const preRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef(null)
+  const preRef = useRef(null)
 
   useEffect(() => {
     const getUser = async () => {
@@ -60,7 +61,8 @@ export default function HomePage() {
       try {
         const highlighterInstance = await createHighlighter({
           themes: ['github-dark', 'github-light'],
-          langs: ['javascript', 'typescript', 'python', 'java', 'cpp', 'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml']
+          langs: ['javascript', 'typescript', 'python', 'java', 'cpp', 'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml'],
+          engine: createOnigurumaEngine(() => import('shiki/wasm')),
         })
         setHighlighter(highlighterInstance)
       } catch (error) {
@@ -152,7 +154,7 @@ export default function HomePage() {
     }
   }
 
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInput = (e) => {
     setContent(e.target.value)
   }
 
