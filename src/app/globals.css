@@ -7,6 +7,7 @@
   background: transparent !important;
   padding: 0 !important;
   margin: 0 !important;
+  overflow: visible !important;
 }
 
 .shiki pre {
@@ -14,6 +15,8 @@
   padding: 0 !important;
   margin: 0 !important;
   overflow: visible !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
 }
 
 .shiki code {
@@ -22,6 +25,27 @@
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace !important;
   font-size: 14px !important;
   line-height: 1.5 !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+}
+
+/* Fix for snippet display cards */
+.snippet-code .shiki {
+  background: #f8fafc !important;
+  padding: 12px !important;
+  border-radius: 6px;
+  overflow-x: auto !important;
+}
+
+.snippet-code .shiki pre {
+  overflow-x: auto !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+}
+
+.snippet-code .shiki code {
+  white-space: pre !important;
+  word-wrap: normal !important;
 }
 
 :root {
