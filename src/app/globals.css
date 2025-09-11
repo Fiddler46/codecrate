@@ -27,12 +27,13 @@
     word-wrap: break-word !important;
   }
   
-  /* Fix for snippet display cards */
+  /* Theme-aware snippet display */
   .snippet-code .shiki {
-    background: #f8fafc !important;
+    background: var(--code-bg, #f8fafc) !important;
     padding: 12px !important;
     border-radius: 6px;
     overflow-x: auto !important;
+    border: 1px solid var(--code-border, #e2e8f0);
   }
   
   .snippet-code .shiki pre {
@@ -49,12 +50,18 @@
   :root {
     --background: #ffffff;
     --foreground: #171717;
+    --code-bg: #f8fafc;
+    --code-border: #e2e8f0;
+    --code-editor-bg: #ffffff;
   }
   
   @media (prefers-color-scheme: dark) {
     :root {
       --background: #0a0a0a;
       --foreground: #ededed;
+      --code-bg: #1e293b;
+      --code-border: #334155;
+      --code-editor-bg: #1e293b;
     }
   }
   

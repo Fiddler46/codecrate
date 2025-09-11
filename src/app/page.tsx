@@ -36,6 +36,7 @@ export default function HomePage() {
   // Shiki states
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null)
   const [highlightedCode, setHighlightedCode] = useState('')
+  const [isDarkMode, setIsDarkMode] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const preRef = useRef<HTMLDivElement>(null)
 
@@ -59,7 +60,7 @@ export default function HomePage() {
     const initHighlighter = async () => {
       try {
         const highlighterInstance = await createHighlighter({
-          themes: ['github-dark', 'github-light'],
+          themes: ['github-dark', 'github-light', 'nord', 'dracula', 'monokai'],
           langs: ['javascript', 'typescript', 'python', 'java', 'cpp', 'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml'],
         })
         setHighlighter(highlighterInstance)
@@ -67,8 +68,21 @@ export default function HomePage() {
         console.error('Failed to initialize highlighter:', error)
       }
     }
-    
+
+    // Detect system theme preference
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    setIsDarkMode(mediaQuery.matches)
+
+    const handleThemeChange = (e: MediaQueryListEvent) => {
+      setIsDarkMode(e.matches)
+    }
+
+    mediaQuery.addEventListener('change', handleThemeChange)
     initHighlighter()
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleThemeChange)
+    }
   }, [])
 
   useEffect(() => {
@@ -76,7 +90,7 @@ export default function HomePage() {
       try {
         const highlighted = highlighter.codeToHtml(content, {
           lang: language.toLowerCase(),
-          theme: 'github-dark'
+          theme: isDarkMode ? 'github-dark' : 'github-light'
         })
         setHighlightedCode(highlighted)
       } catch (error) {
@@ -86,7 +100,7 @@ export default function HomePage() {
     } else {
       setHighlightedCode('')
     }
-  }, [highlighter, content, language])
+  }, [highlighter, content, language, isDarkMode])
 
   const fetchSnippets = async (search?: string) => {
     try {
@@ -319,7 +333,7 @@ export default function HomePage() {
               try {
                 highlightedSnippet = highlighter.codeToHtml(snippet.content, {
                   lang: snippet.language.toLowerCase(),
-                  theme: 'github-light'
+                  theme: isDarkMode ? 'github-dark' : 'github-light'
                 })
               } catch (error) {
                 console.error('Snippet highlighting error:', error)
