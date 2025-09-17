@@ -86,21 +86,31 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    if (highlighter && content) {
+    let timeoutId: NodeJS.Timeout;
+    const updateHighlight = () => {
+      if (!highlighter || !content) {
+        setHighlightedCode('')
+        return
+      }
+      
       try {
         const highlighted = highlighter.codeToHtml(content, {
           lang: language.toLowerCase(),
           theme: isDarkMode ? 'github-dark' : 'github-light'
         })
-        setHighlightedCode(highlighted)
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(highlighted, 'text/html')
+        const code = doc.querySelector('pre')?.innerHTML || ''
+        setHighlightedCode(code)
       } catch (error) {
         console.error('Highlighting error:', error)
-        setHighlightedCode(`<pre><code>${content}</code></pre>`)
+        setHighlightedCode(content)
       }
-    } else {
-      setHighlightedCode('')
     }
-  }, [highlighter, content, language, isDarkMode])
+
+    timeoutId = setTimeout(updateHighlight, 1)
+    return () => clearTimeout(timeoutId)
+  }, [content, language, isDarkMode, highlighter])
 
   const fetchSnippets = async (search?: string) => {
     try {
@@ -267,52 +277,37 @@ export default function HomePage() {
                   onChange={(e) => setTags(e.target.value)}
                 />
                 <div className="relative">
-                  {highlightedCode ? (
-                    <div className="relative">
-                      <textarea
-                        ref={textareaRef}
-                        placeholder="Write your code here..."
-                        className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent relative z-10 text-transparent caret-black"
-                        value={content}
-                        onChange={handleInput}
-                        onScroll={handleScroll}
-                        required
-                        style={{
-                          color: 'transparent',
-                          caretColor: '#000',
-                          lineHeight: '1.5',
-                          fontSize: '14px',
-                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
-                        }}
-                      />
-                      <div
-                        ref={preRef}
-                        className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg border border-transparent"
-                        style={{
-                          lineHeight: '1.5',
-                          fontSize: '14px',
-                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
-                        }}
-                        dangerouslySetInnerHTML={{
-                          __html: highlightedCode
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <textarea
-                      ref={textareaRef}
-                      placeholder="Write your code here..."
-                      className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white text-gray-900"
-                      value={content}
-                      onChange={handleInput}
-                      required
-                      style={{
-                        lineHeight: '1.5',
-                        fontSize: '14px',
-                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
-                      }}
-                    />
-                  )}
+                  <div
+                    ref={preRef}
+                    className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg"
+                    style={{
+                      lineHeight: '1.5',
+                      fontSize: '14px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+                    }}
+                  >
+                    <pre className="shiki" style={{ backgroundColor: 'transparent' }}>
+                      <code dangerouslySetInnerHTML={{ __html: highlightedCode || '<span></span>' }} />
+                    </pre>
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    placeholder="Write your code here..."
+                    className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent"
+                    value={content}
+                    onChange={handleInput}
+                    onScroll={handleScroll}
+                    required
+                    style={{
+                      lineHeight: '1.5',
+                      fontSize: '14px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+                      color: 'rgba(0, 0, 0, 0.1)',
+                      position: 'relative',
+                      backgroundColor: 'transparent',
+                      caretColor: isDarkMode ? 'white' : 'black'
+                    }}
+                  />
                 </div>
                 <button
                   type="submit"
