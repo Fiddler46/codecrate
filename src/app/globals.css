@@ -1,26 +1,72 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  @import "tailwindcss";
+  
+  /* Shiki code editor styles */
+  .shiki {
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+  
+  .shiki pre {
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+  }
+  
+  .shiki code {
+    background: transparent !important;
+    padding: 0 !important;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+  }
+  
+  /* Theme-aware snippet display */
+  .snippet-code .shiki {
+    background: var(--code-bg, #f8fafc) !important;
+    padding: 12px !important;
+    border-radius: 6px;
+    overflow-x: auto !important;
+    border: 1px solid var(--code-border, #e2e8f0);
+  }
+  
+  .snippet-code .shiki pre {
+    overflow-x: auto !important;
+    white-space: pre !important;
+    word-wrap: normal !important;
+  }
+  
+  .snippet-code .shiki code {
+    white-space: pre !important;
+    word-wrap: normal !important;
+  }
+  
+  :root {
+    --background: #ffffff;
+    --foreground: #171717;
+    --code-bg: #f8fafc;
+    --code-border: #e2e8f0;
+    --code-editor-bg: #ffffff;
+  }
+  
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0a0a0a;
+      --foreground: #ededed;
+      --code-bg: #1e293b;
+      --code-border: #334155;
+      --code-editor-bg: #1e293b;
+    }
+  }
+  
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: Arial, Helvetica, sans-serif;
+  }
