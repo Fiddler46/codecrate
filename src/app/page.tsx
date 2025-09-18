@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -181,6 +180,24 @@ export default function HomePage() {
     setContent(e.target.value)
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (textareaRef.current) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = e.currentTarget.selectionStart;
+        const end = e.currentTarget.selectionEnd;
+        const newValue = content.substring(0, start) + '  ' + content.substring(end);
+        setContent(newValue);
+        // Set cursor position after the inserted spaces
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
+          }
+        }, 0);
+      }
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -296,7 +313,9 @@ export default function HomePage() {
                     className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent"
                     value={content}
                     onChange={handleInput}
+                    onKeyDown={handleKeyDown}
                     onScroll={handleScroll}
+                    spellCheck={false}
                     required
                     style={{
                       lineHeight: '1.5',
@@ -305,7 +324,8 @@ export default function HomePage() {
                       color: 'rgba(0, 0, 0, 0.1)',
                       position: 'relative',
                       backgroundColor: 'transparent',
-                      caretColor: isDarkMode ? 'white' : 'black'
+                      caretColor: isDarkMode ? 'white' : 'black',
+                      WebkitTextFillColor: 'transparent'
                     }}
                   />
                 </div>
