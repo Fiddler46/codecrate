@@ -70,3 +70,21 @@
     color: var(--foreground);
     font-family: Arial, Helvetica, sans-serif;
   }
+
+  /* Ensure form fields always have readable text regardless of OS color scheme.
+     The code editor textareas override this via inline WebkitTextFillColor. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    color: #171717;
+    caret-color: #171717;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      color: #171717;
+      caret-color: #171717;
+    }
+  }

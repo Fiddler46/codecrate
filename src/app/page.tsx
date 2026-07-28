@@ -119,14 +119,14 @@ export default function HomePage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [openMenuId])
 
-  // Highlight create form code
+    // Highlight create form code — editor always uses dark theme for readability
   useEffect(() => {
     const id = setTimeout(() => {
       if (!highlighter || !content) { setHighlightedCode(''); return }
       try {
         const html = highlighter.codeToHtml(content, {
           lang: language.toLowerCase(),
-          theme: isDarkMode ? 'github-dark' : 'github-light',
+          theme: 'github-dark',
         })
         const doc = new DOMParser().parseFromString(html, 'text/html')
         setHighlightedCode(doc.querySelector('pre')?.innerHTML || '')
@@ -135,16 +135,16 @@ export default function HomePage() {
       }
     }, 1)
     return () => clearTimeout(id)
-  }, [content, language, isDarkMode, highlighter])
+  }, [content, language, highlighter])
 
-  // Highlight edit modal code
+  // Highlight edit modal code — editor always uses dark theme for readability
   useEffect(() => {
     const id = setTimeout(() => {
       if (!highlighter || !editContent) { setEditHighlightedCode(''); return }
       try {
         const html = highlighter.codeToHtml(editContent, {
           lang: editLanguage.toLowerCase(),
-          theme: isDarkMode ? 'github-dark' : 'github-light',
+          theme: 'github-dark',
         })
         const doc = new DOMParser().parseFromString(html, 'text/html')
         setEditHighlightedCode(doc.querySelector('pre')?.innerHTML || '')
@@ -153,7 +153,7 @@ export default function HomePage() {
       }
     }, 1)
     return () => clearTimeout(id)
-  }, [editContent, editLanguage, isDarkMode, highlighter])
+  }, [editContent, editLanguage, highlighter])
 
   const fetchSnippets = async (search?: string) => {
     try {
@@ -388,7 +388,7 @@ export default function HomePage() {
 
           {showCreateForm && (
             <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
-              <h2 className="text-xl font-semibold mb-4">Create New Snippet</h2>
+              <h2 className="text-xl font-semibold mb-4 text-zinc-900">Create New Snippet</h2>
               <form onSubmit={handleCreateSnippet} className="space-y-4">
                 <input
                   type="text"
@@ -415,10 +415,10 @@ export default function HomePage() {
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                 />
-                <div className="relative">
+                <div className="relative rounded-lg overflow-hidden border border-zinc-700 bg-[#0d1117]">
                   <div
                     ref={preRef}
-                    className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg"
+                    className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto"
                     style={codeEditorStyle}
                   >
                     <pre className="shiki" style={{ backgroundColor: 'transparent' }}>
@@ -428,7 +428,7 @@ export default function HomePage() {
                   <textarea
                     ref={textareaRef}
                     placeholder="Write your code here..."
-                    className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-transparent"
+                    className="w-full p-3 h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-transparent placeholder:text-zinc-500"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     onKeyDown={makeKeyDownHandler(() => content, setContent, textareaRef)}
@@ -440,7 +440,7 @@ export default function HomePage() {
                       color: 'rgba(0,0,0,0.1)',
                       position: 'relative',
                       backgroundColor: 'transparent',
-                      caretColor: isDarkMode ? 'white' : 'black',
+                      caretColor: 'white',
                       WebkitTextFillColor: 'transparent',
                     }}
                   />
@@ -629,10 +629,10 @@ export default function HomePage() {
                 value={editTags}
                 onChange={(e) => setEditTags(e.target.value)}
               />
-              <div className="relative">
+              <div className="relative rounded-lg overflow-hidden border border-zinc-700 bg-[#0d1117]">
                 <div
                   ref={editPreRef}
-                  className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto rounded-lg"
+                  className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto"
                   style={codeEditorStyle}
                 >
                   <pre className="shiki" style={{ backgroundColor: 'transparent' }}>
@@ -642,7 +642,7 @@ export default function HomePage() {
                 <textarea
                   ref={editTextareaRef}
                   placeholder="Write your code here..."
-                  className="w-full p-3 border border-zinc-300 rounded-lg h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="w-full p-3 h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-transparent placeholder:text-zinc-500"
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   onKeyDown={makeKeyDownHandler(() => editContent, setEditContent, editTextareaRef)}
@@ -654,7 +654,7 @@ export default function HomePage() {
                     color: 'rgba(0,0,0,0.1)',
                     position: 'relative',
                     backgroundColor: 'transparent',
-                    caretColor: isDarkMode ? 'white' : 'black',
+                    caretColor: 'white',
                     WebkitTextFillColor: 'transparent',
                   }}
                 />
