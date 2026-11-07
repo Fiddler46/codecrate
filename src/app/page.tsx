@@ -1,684 +1,1083 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { createClient } from '../../lib/supabase-browser'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { User } from '@supabase/supabase-js'
-import { createHighlighter, type Highlighter } from 'shiki'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
+import type { Highlighter } from 'shiki'
+import { createClient } from '../../lib/supabase-browser'
+import {
+  DEFAULT_CRATES,
+  FALLBACK_LANGUAGE,
+  LANGUAGE_MAP,
+  PAGE_SIZE,
+  RECENT_WINDOW_MS,
+} from '../lib/constants'
+import {
+  capitalize,
+  formatBytes,
+  formatDate,
+  formatTime,
+  getLanguage,
+  pluralize,
+} from '../lib/format'
+import { parseSearchQuery } from '../lib/parse-search'
+import { getHighlighter } from '../lib/shiki'
+import type {
+  Density,
+  ScopeChip,
+  Snippet,
+  SnippetDraft,
+  SortMode,
+  ToastMessage,
+  ToastTone,
+  ViewMode,
+} from '../lib/types'
+import { useTheme } from '../lib/use-theme'
+import { useVaultMeta } from '../lib/vault-meta'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { Icon } from '../components/ui/Icon'
+import { Toasts } from '../components/ui/Toasts'
+import { ScopeBar } from '../components/dashboard/ScopeBar'
+import { Sidebar } from '../components/dashboard/Sidebar'
+import type { SidebarCrate, SidebarLanguage, SidebarTag } from '../components/dashboard/Sidebar'
+import { SnippetCard } from '../components/dashboard/SnippetCard'
+import { StatusBar } from '../components/dashboard/StatusBar'
+import { Toolbar } from '../components/dashboard/Toolbar'
+import { TopBar } from '../components/dashboard/TopBar'
+import { SnippetStudio } from '../components/studio/SnippetStudio'
 
-interface Snippet {
-  id: string
+interface ConfirmState {
   title: string
-  content: string
-  language: string
-  tags: string[]
-  created_at: string
+  message: string
+  confirmLabel: string
+  tone: 'danger' | 'default'
+  action: () => Promise<void>
 }
 
-const LANGUAGES = [
-  'javascript', 'typescript', 'python', 'java', 'cpp',
-  'css', 'html', 'json', 'markdown', 'sql', 'bash', 'yaml',
-]
+interface StudioState {
+  mode: 'create' | 'edit'
+  snippet?: Snippet
+}
 
-function KebabIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <circle cx="8" cy="3" r="1.5" />
-      <circle cx="8" cy="8" r="1.5" />
-      <circle cx="8" cy="13" r="1.5" />
-    </svg>
-  )
+function getViewTitle(
+  activeView: ViewMode,
+  crateFilter: string | null,
+  crateNames: Map<string, string>
+): string {
+  if (crateFilter) return crateNames.get(crateFilter) ?? 'All Snippets'
+  if (activeView === 'favorites') return 'Favorites'
+  if (activeView === 'recent') return 'Recent'
+  if (activeView === 'archive') return 'Trash / Archive'
+  return 'All Snippets'
 }
 
 export default function HomePage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseRef = useRef<SupabaseClient | null>(null)
+  const getSupabase = useCallback(() => {
+    if (!supabaseRef.current) supabaseRef.current = createClient()
+    return supabaseRef.current
+  }, [])
+  const { theme, toggle: toggleTheme } = useTheme()
 
   const [user, setUser] = useState<User | null>(null)
   const [snippets, setSnippets] = useState<Snippet[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
-  const [showCreateForm, setShowCreateForm] = useState(false)
-
-  // Form states
-  const [title, setTitle] = useState('')
-  const [language, setLanguage] = useState('javascript')
-  const [tags, setTags] = useState('')
-  const [content, setContent] = useState('')
-  const [creating, setCreating] = useState(false)
-
-  // Shiki states
+  const [error, setError] = useState<string | null>(null)
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null)
-  const [highlightedCode, setHighlightedCode] = useState('')
-  const [isDarkMode, setIsDarkMode] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const preRef = useRef<HTMLDivElement>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
 
-  // Kebab menu state
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Multi-select state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeView, setActiveView] = useState<ViewMode>('all')
+  const [crateFilter, setCrateFilter] = useState<string | null>(null)
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null)
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [density, setDensity] = useState<Density>('crates')
+  const [sortMode, setSortMode] = useState<SortMode>('updated')
+  const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Edit modal state
-  const [editingSnippet, setEditingSnippet] = useState<Snippet | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editLanguage, setEditLanguage] = useState('javascript')
-  const [editTags, setEditTags] = useState('')
-  const [editContent, setEditContent] = useState('')
+  const [studio, setStudio] = useState<StudioState | null>(null)
   const [saving, setSaving] = useState(false)
-  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const editPreRef = useRef<HTMLDivElement>(null)
-  const [editHighlightedCode, setEditHighlightedCode] = useState('')
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const toastId = useRef(0)
+
+  const {
+    meta,
+    toggleFavorite,
+    archive: archiveSnippets,
+    restore: restoreSnippets,
+    toggleArchived,
+    recordCopy,
+    markCreated,
+    markSaved,
+    forget,
+    addCrate,
+  } = useVaultMeta(user?.id ?? null)
+
+  const notify = useCallback((tone: ToastTone, message: string) => {
+    const id = toastId.current + 1
+    toastId.current = id
+    setToasts((current) => [...current, { id, tone, message }].slice(-4))
+  }, [])
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id))
+  }, [])
+
+  const loadSnippets = useCallback(async () => {
+    setError(null)
+    const response = await fetch('/api/snippets', { cache: 'no-store' })
+
+    if (response.status === 401) {
+      router.replace('/login')
+      return
+    }
+
+    if (!response.ok) throw new Error('Failed to load snippets')
+
+    const data: unknown = await response.json()
+    setSnippets(Array.isArray(data) ? (data as Snippet[]) : [])
+    setLastSyncedAt(new Date())
+  }, [router])
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      if (!user) {
-        router.push('/login')
-      } else {
-        fetchSnippets()
+    let cancelled = false
+
+    const boot = async () => {
+      try {
+        const { data: { user: currentUser } } = await getSupabase().auth.getUser()
+        if (cancelled) return
+
+        setUser(currentUser)
+        if (!currentUser) {
+          router.replace('/login')
+          return
+        }
+
+        await loadSnippets()
+      } catch (loadError) {
+        console.error('Could not open the vault:', loadError)
+        if (!cancelled) setError('Could not open your vault. Check your connection and try again.')
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      setLoading(false)
     }
-    getUser()
+
+    void boot()
+    return () => {
+      cancelled = true
+    }
+  }, [getSupabase, loadSnippets, router])
+
+  useEffect(() => {
+    let cancelled = false
+    getHighlighter()
+      .then((instance) => {
+        if (!cancelled) setHighlighter(instance)
+      })
+      .catch((highlighterError) => {
+        console.error('Could not initialize the syntax highlighter:', highlighterError)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
-    const initHighlighter = async () => {
-      try {
-        const h = await createHighlighter({
-          themes: ['github-dark', 'github-light', 'nord', 'dracula', 'monokai'],
-          langs: LANGUAGES,
-        })
-        setHighlighter(h)
-      } catch (error) {
-        console.error('Failed to initialize highlighter:', error)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (studio || confirmState) return
+
+      const target = event.target as HTMLElement | null
+      const isTyping = target
+        ? ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
+        : false
+
+      if (isTyping) return
+
+      if (event.key.toLowerCase() === 'n' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault()
+        setStudio({ mode: 'create' })
       }
     }
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    setIsDarkMode(mediaQuery.matches)
-    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches)
-    mediaQuery.addEventListener('change', handleThemeChange)
-    initHighlighter()
-    return () => mediaQuery.removeEventListener('change', handleThemeChange)
-  }, [])
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [studio, confirmState])
 
-  // Close kebab menu on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (openMenuId && menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null)
+  const archivedSet = useMemo(() => new Set(meta.archived), [meta.archived])
+  const favoriteSet = useMemo(() => new Set(meta.favorites), [meta.favorites])
+  const crates = useMemo(() => [...DEFAULT_CRATES, ...meta.customCrates], [meta.customCrates])
+  const crateNames = useMemo(() => new Map(crates.map((crate) => [crate.id, crate.name])), [crates])
+  const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery])
+
+  const activeSnippets = useMemo(
+    () => snippets.filter((snippet) => !archivedSet.has(snippet.id)),
+    [snippets, archivedSet]
+  )
+
+  const crateCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const snippet of activeSnippets) {
+      const crateId = meta.crates[snippet.id] ?? 'personal-vault'
+      counts[crateId] = (counts[crateId] ?? 0) + 1
+    }
+    return counts
+  }, [activeSnippets, meta.crates])
+
+  const languageItems = useMemo<SidebarLanguage[]>(() => {
+    const counts = new Map<string, number>()
+    for (const snippet of activeSnippets) {
+      counts.set(snippet.language, (counts.get(snippet.language) ?? 0) + 1)
+    }
+
+    return Array.from(counts.entries())
+      .map(([id, count]) => {
+        const language = LANGUAGE_MAP[id] ?? {
+          ...FALLBACK_LANGUAGE,
+          id,
+          label: capitalize(id),
+        }
+        return { id, label: language.label, colorVar: language.colorVar, count }
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  }, [activeSnippets])
+
+  const tagItems = useMemo(() => {
+    const counts = new Map<string, { tag: string; count: number }>()
+
+    for (const snippet of activeSnippets) {
+      for (const tag of snippet.tags) {
+        const key = tag.toLowerCase()
+        const current = counts.get(key)
+        counts.set(key, { tag: current?.tag ?? tag, count: (current?.count ?? 0) + 1 })
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [openMenuId])
 
-    // Highlight create form code — editor always uses dark theme for readability
+    return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+  }, [activeSnippets])
+
+  const popularTags = useMemo<SidebarTag[]>(
+    () => tagItems.slice(0, 10).map(({ tag, count }) => ({ tag, count })),
+    [tagItems]
+  )
+
+  const crateItems = useMemo<SidebarCrate[]>(
+    () => crates.map((crate) => ({ ...crate, count: crateCounts[crate.id] ?? 0 })),
+    [crates, crateCounts]
+  )
+
+  const recentCount = useMemo(
+    () =>
+      activeSnippets.filter((snippet) => {
+        const updated = new Date(meta.updatedAt[snippet.id] ?? snippet.created_at).getTime()
+        return Date.now() - updated <= RECENT_WINDOW_MS
+      }).length,
+    [activeSnippets, meta.updatedAt]
+  )
+
+  const counts = useMemo(
+    () => ({
+      all: activeSnippets.length,
+      favorites: activeSnippets.filter((snippet) => favoriteSet.has(snippet.id)).length,
+      recent: recentCount,
+      archive: meta.archived.length,
+    }),
+    [activeSnippets, favoriteSet, recentCount, meta.archived.length]
+  )
+
+  const filteredSnippets = useMemo(() => {
+    const now = Date.now()
+
+    return snippets.filter((snippet) => {
+      const isArchived = archivedSet.has(snippet.id)
+
+      if (activeView === 'archive') {
+        if (!isArchived) return false
+      } else if (isArchived) {
+        return false
+      }
+
+      if (activeView === 'favorites' && !favoriteSet.has(snippet.id)) return false
+
+      if (activeView === 'recent') {
+        const updated = new Date(meta.updatedAt[snippet.id] ?? snippet.created_at).getTime()
+        if (now - updated > RECENT_WINDOW_MS) return false
+      }
+
+      const snippetCrate = meta.crates[snippet.id] ?? 'personal-vault'
+      if (crateFilter && snippetCrate !== crateFilter) return false
+      if (parsedQuery.crates.length > 0 && !parsedQuery.crates.includes(snippetCrate)) return false
+
+      if (languageFilter && snippet.language !== languageFilter) return false
+      if (parsedQuery.languages.length > 0 && !parsedQuery.languages.includes(snippet.language)) return false
+
+      if (tagFilter && !snippet.tags.some((tag) => tag.toLowerCase() === tagFilter.toLowerCase())) {
+        return false
+      }
+
+      if (
+        parsedQuery.tags.length > 0 &&
+        !parsedQuery.tags.every((queryTag) =>
+          snippet.tags.some((tag) => tag.toLowerCase() === queryTag)
+        )
+      ) {
+        return false
+      }
+
+      if (parsedQuery.text) {
+        const haystack = [
+          snippet.title,
+          snippet.content,
+          snippet.language,
+          snippet.tags.join(' '),
+          meta.descriptions[snippet.id] ?? '',
+          crateNames.get(snippetCrate) ?? '',
+        ]
+          .join(' ')
+          .toLowerCase()
+
+        if (!haystack.includes(parsedQuery.text)) return false
+      }
+
+      return true
+    })
+  }, [
+    snippets,
+    activeView,
+    archivedSet,
+    favoriteSet,
+    meta.updatedAt,
+    meta.crates,
+    meta.descriptions,
+    crateFilter,
+    languageFilter,
+    tagFilter,
+    parsedQuery,
+    crateNames,
+  ])
+
+  const sortedSnippets = useMemo(() => {
+    const list = [...filteredSnippets]
+    const updatedTime = (snippet: Snippet) =>
+      new Date(meta.updatedAt[snippet.id] ?? snippet.created_at).getTime()
+
+    switch (sortMode) {
+      case 'created':
+        list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        break
+      case 'title':
+        list.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+        break
+      case 'language':
+        list.sort(
+          (a, b) =>
+            a.language.localeCompare(b.language) ||
+            a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+        )
+        break
+      default:
+        list.sort((a, b) => updatedTime(b) - updatedTime(a))
+    }
+
+    return list
+  }, [filteredSnippets, sortMode, meta.updatedAt])
+
+  const totalPages = Math.max(1, Math.ceil(sortedSnippets.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const visibleSnippets = useMemo(
+    () => sortedSnippets.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [sortedSnippets, safePage]
+  )
+
+  const allSelected =
+    sortedSnippets.length > 0 && sortedSnippets.every((snippet) => selectedIds.has(snippet.id))
+  const someSelected = selectedIds.size > 0
+
+  const copyStats = useMemo(() => {
+    const day = 24 * 60 * 60 * 1000
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const start = today.getTime() - (6 - index) * day
+      return { start, end: start + day }
+    })
+
+    const dailyCounts = days.map(
+      (range) => meta.copyLog.filter((timestamp) => timestamp >= range.start && timestamp < range.end).length
+    )
+    const week = dailyCounts.reduce((total, count) => total + count, 0)
+    const previousStart = today.getTime() - 14 * day
+    const previousEnd = today.getTime() - 7 * day
+    const previous = meta.copyLog.filter(
+      (timestamp) => timestamp >= previousStart && timestamp < previousEnd
+    ).length
+    const delta = previous === 0 ? (week > 0 ? 100 : 0) : Math.round(((week - previous) / previous) * 100)
+
+    return { counts: dailyCounts, week, delta }
+  }, [meta.copyLog])
+
+  const storageBytes = useMemo(
+    () => JSON.stringify({ snippets, meta }).length * 2,
+    [snippets, meta]
+  )
+
+  const scopeChips = useMemo<ScopeChip[]>(() => {
+    const chips: ScopeChip[] = []
+
+    if (activeView !== 'all') {
+      chips.push({
+        key: 'view',
+        type: 'view',
+        label: 'View',
+        value: activeView === 'archive' ? 'Archive' : capitalize(activeView),
+        onClear: () => setActiveView('all'),
+      })
+    }
+
+    if (crateFilter) {
+      chips.push({
+        key: `crate-${crateFilter}`,
+        type: 'crate',
+        label: 'Crate',
+        value: crateNames.get(crateFilter) ?? crateFilter,
+        onClear: () => setCrateFilter(null),
+      })
+    }
+
+    if (languageFilter) {
+      chips.push({
+        key: `language-${languageFilter}`,
+        type: 'language',
+        label: 'Lang',
+        value: getLanguage(languageFilter).label,
+        onClear: () => setLanguageFilter(null),
+      })
+    }
+
+    if (tagFilter) {
+      chips.push({
+        key: `tag-${tagFilter}`,
+        type: 'tag',
+        label: 'Tag',
+        value: `#${tagFilter}`,
+        onClear: () => setTagFilter(null),
+      })
+    }
+
+    if (searchQuery.trim()) {
+      chips.push({
+        key: 'search',
+        type: 'search',
+        label: 'Search',
+        value: searchQuery.trim(),
+        onClear: () => setSearchQuery(''),
+      })
+    }
+
+    return chips
+  }, [activeView, crateFilter, crateNames, languageFilter, tagFilter, searchQuery])
+
+  const viewTitle = getViewTitle(activeView, crateFilter, crateNames)
+  const hasFilters = Boolean(searchQuery.trim() || languageFilter || tagFilter || crateFilter)
+
   useEffect(() => {
-    const id = setTimeout(() => {
-      if (!highlighter || !content) { setHighlightedCode(''); return }
+    setPage(1)
+  }, [searchQuery, languageFilter, tagFilter, crateFilter, activeView, sortMode])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [searchQuery, languageFilter, tagFilter, crateFilter, activeView])
+
+  const handleViewChange = (view: ViewMode) => {
+    setActiveView(view)
+    setCrateFilter(null)
+    setLanguageFilter(null)
+    setTagFilter(null)
+    setSearchQuery('')
+    setSidebarOpen(false)
+  }
+
+  const handleCrateSelect = (crateId: string) => {
+    setActiveView('all')
+    setCrateFilter(crateId)
+    setLanguageFilter(null)
+    setTagFilter(null)
+    setSearchQuery('')
+    setSidebarOpen(false)
+  }
+
+  const handleLanguageSelect = (languageId: string) => {
+    setLanguageFilter((current) => (current === languageId ? null : languageId))
+  }
+
+  const handleTagSelect = (tag: string) => {
+    setTagFilter((current) => (current?.toLowerCase() === tag.toLowerCase() ? null : tag))
+  }
+
+  const handleClearScope = () => {
+    setActiveView('all')
+    setCrateFilter(null)
+    setLanguageFilter(null)
+    setTagFilter(null)
+    setSearchQuery('')
+  }
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleToggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+      return
+    }
+
+    setSelectedIds(new Set(sortedSnippets.map((snippet) => snippet.id)))
+  }
+
+  const handleCopy = useCallback(
+    async (snippet: Snippet): Promise<boolean> => {
       try {
-        const html = highlighter.codeToHtml(content, {
-          lang: language.toLowerCase(),
-          theme: 'github-dark',
-        })
-        const doc = new DOMParser().parseFromString(html, 'text/html')
-        setHighlightedCode(doc.querySelector('pre')?.innerHTML || '')
+        await navigator.clipboard.writeText(snippet.content)
+        recordCopy(snippet.id)
+        return true
       } catch {
-        setHighlightedCode(content)
+        notify('error', 'Clipboard access was blocked by your browser.')
+        return false
       }
-    }, 1)
-    return () => clearTimeout(id)
-  }, [content, language, highlighter])
+    },
+    [notify, recordCopy]
+  )
 
-  // Highlight edit modal code — editor always uses dark theme for readability
-  useEffect(() => {
-    const id = setTimeout(() => {
-      if (!highlighter || !editContent) { setEditHighlightedCode(''); return }
-      try {
-        const html = highlighter.codeToHtml(editContent, {
-          lang: editLanguage.toLowerCase(),
-          theme: 'github-dark',
-        })
-        const doc = new DOMParser().parseFromString(html, 'text/html')
-        setEditHighlightedCode(doc.querySelector('pre')?.innerHTML || '')
-      } catch {
-        setEditHighlightedCode(editContent)
-      }
-    }, 1)
-    return () => clearTimeout(id)
-  }, [editContent, editLanguage, highlighter])
+  const handleToggleArchive = (snippet: Snippet) => {
+    const wasArchived = archivedSet.has(snippet.id)
+    toggleArchived(snippet.id)
+    notify(
+      'success',
+      wasArchived ? 'Snippet restored to the vault.' : 'Snippet moved to the archive.'
+    )
+  }
 
-  const fetchSnippets = async (search?: string) => {
-    try {
-      const url = search ? `/api/snippets?search=${encodeURIComponent(search)}` : '/api/snippets'
-      const res = await fetch(url)
-      if (res.ok) setSnippets(await res.json())
-    } catch (error) {
-      console.error('Error fetching snippets:', error)
+  const handleBulkArchive = () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+
+    if (activeView === 'archive') {
+      restoreSnippets(ids)
+      notify('success', `${ids.length} ${pluralize(ids.length, 'snippet')} restored.`)
+    } else {
+      archiveSnippets(ids)
+      notify('success', `${ids.length} ${pluralize(ids.length, 'snippet')} archived.`)
     }
+
+    setSelectedIds(new Set())
   }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    fetchSnippets(searchQuery)
+  const handleBulkDelete = () => {
+    const selectedSnippets = snippets.filter((snippet) => selectedIds.has(snippet.id))
+    requestDelete(selectedSnippets)
   }
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
+  const handleExport = () => {
+    if (sortedSnippets.length === 0) return
+
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      snippets: sortedSnippets.map((snippet) => ({
+        id: snippet.id,
+        title: snippet.title,
+        content: snippet.content,
+        language: snippet.language,
+        tags: snippet.tags,
+        created_at: snippet.created_at,
+        crate: crateNames.get(meta.crates[snippet.id] ?? 'personal-vault') ?? 'Personal Vault',
+        favorite: favoriteSet.has(snippet.id),
+        archived: archivedSet.has(snippet.id),
+        description: meta.descriptions[snippet.id] ?? '',
+        version: meta.versions[snippet.id] ?? 1,
+        updated_at: meta.updatedAt[snippet.id] ?? snippet.created_at,
+      })),
+    }
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `codecrate-export-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+
+    notify('success', `Exported ${sortedSnippets.length} ${pluralize(sortedSnippets.length, 'snippet')}.`)
   }
 
-  const handleCreateSnippet = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setCreating(true)
+  const handleAddCrate = (name: string) => {
+    const crate = addCrate(name)
+    if (!crate) {
+      notify('error', 'A crate with that name already exists.')
+      return
+    }
+
+    setActiveView('all')
+    setCrateFilter(crate.id)
+    setLanguageFilter(null)
+    setTagFilter(null)
+    setSearchQuery('')
+    notify('success', `Crate “${crate.name}” created.`)
+  }
+
+  const handleDuplicate = async (snippet: Snippet) => {
     try {
-      const res = await fetch('/api/snippets', {
+      const response = await fetch('/api/snippets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title,
-          language,
-          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-          content,
+          title: `${snippet.title} (copy)`,
+          content: snippet.content,
+          language: snippet.language,
+          tags: snippet.tags,
         }),
       })
-      if (res.ok) {
-        setTitle(''); setLanguage('javascript'); setTags(''); setContent('')
-        setShowCreateForm(false)
-        fetchSnippets()
-      } else {
-        alert('Failed to create snippet!')
-      }
-    } catch (error) {
-      console.error('Error creating snippet:', error)
-      alert('Error creating snippet!')
-    } finally {
-      setCreating(false)
-    }
-  }
 
-  const handleDeleteSnippet = async (id: string) => {
-    setOpenMenuId(null)
-    if (!confirm('Delete this snippet?')) return
-    try {
-      const res = await fetch(`/api/snippets/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        setSnippets(prev => prev.filter(s => s.id !== id))
-        setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next })
-      } else {
-        alert('Failed to delete snippet.')
-      }
-    } catch (error) {
-      console.error('Error deleting snippet:', error)
-      alert('Error deleting snippet.')
-    }
-  }
+      if (!response.ok) throw new Error('Duplicate failed')
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return
-    if (!confirm(`Delete ${selectedIds.size} selected snippet${selectedIds.size > 1 ? 's' : ''}?`)) return
-    setBulkDeleting(true)
-    try {
-      await Promise.all(
-        Array.from(selectedIds).map(id =>
-          fetch(`/api/snippets/${id}`, { method: 'DELETE' })
-        )
+      const created: Snippet = await response.json()
+      setSnippets((current) => [created, ...current])
+      markCreated(
+        created.id,
+        meta.crates[snippet.id] ?? 'personal-vault',
+        meta.descriptions[snippet.id] ?? ''
       )
-      setSnippets(prev => prev.filter(s => !selectedIds.has(s.id)))
-      setSelectedIds(new Set())
-    } catch (error) {
-      console.error('Error bulk deleting snippets:', error)
-      alert('Some snippets could not be deleted.')
-    } finally {
-      setBulkDeleting(false)
+      setLastSyncedAt(new Date())
+      notify('success', 'Snippet duplicated into the vault.')
+    } catch {
+      notify('error', 'Could not duplicate this snippet.')
     }
   }
 
-  const openEditModal = (snippet: Snippet) => {
-    setOpenMenuId(null)
-    setEditingSnippet(snippet)
-    setEditTitle(snippet.title)
-    setEditLanguage(snippet.language)
-    setEditTags(snippet.tags.join(', '))
-    setEditContent(snippet.content)
-  }
-
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingSnippet) return
+  const createSnippet = async (draft: SnippetDraft) => {
     setSaving(true)
+
     try {
-      const res = await fetch(`/api/snippets/${editingSnippet.id}`, {
-        method: 'PUT',
+      const response = await fetch('/api/snippets', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: editTitle,
-          language: editLanguage,
-          tags: editTags.split(',').map(t => t.trim()).filter(Boolean),
-          content: editContent,
+          title: draft.title,
+          content: draft.content,
+          language: draft.language,
+          tags: draft.tags,
         }),
       })
-      if (res.ok) {
-        const updated: Snippet = await res.json()
-        setSnippets(prev => prev.map(s => s.id === updated.id ? updated : s))
-        setEditingSnippet(null)
-      } else {
-        alert('Failed to save changes.')
-      }
-    } catch (error) {
-      console.error('Error updating snippet:', error)
-      alert('Error saving changes.')
+
+      if (!response.ok) throw new Error('Create failed')
+
+      const created: Snippet = await response.json()
+      setSnippets((current) => [created, ...current])
+      markCreated(created.id, draft.crateId, draft.description)
+      setLastSyncedAt(new Date())
+      setStudio(null)
+      notify('success', 'Snippet added to your vault.')
+    } catch {
+      notify('error', 'Could not save the snippet. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleScroll = () => {
-    if (textareaRef.current && preRef.current) {
-      preRef.current.scrollTop = textareaRef.current.scrollTop
-      preRef.current.scrollLeft = textareaRef.current.scrollLeft
+  const updateSnippet = async (snippet: Snippet, draft: SnippetDraft) => {
+    setSaving(true)
+
+    try {
+      const response = await fetch(`/api/snippets/${snippet.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: draft.title,
+          content: draft.content,
+          language: draft.language,
+          tags: draft.tags,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Update failed')
+
+      const updated: Snippet = await response.json()
+      setSnippets((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      markSaved(updated.id, draft.crateId, draft.description)
+      setLastSyncedAt(new Date())
+      setStudio(null)
+      notify('success', 'Snippet changes saved.')
+    } catch {
+      notify('error', 'Could not save the snippet. Please try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const handleEditScroll = () => {
-    if (editTextareaRef.current && editPreRef.current) {
-      editPreRef.current.scrollTop = editTextareaRef.current.scrollTop
-      editPreRef.current.scrollLeft = editTextareaRef.current.scrollLeft
+  const handleStudioSubmit = (draft: SnippetDraft) => {
+    if (studio?.mode === 'edit' && studio.snippet) {
+      void updateSnippet(studio.snippet, draft)
+      return
+    }
+
+    void createSnippet(draft)
+  }
+
+  const requestDelete = useCallback(
+    (snippetsToDelete: Snippet[], closeStudioAfter = false) => {
+      if (snippetsToDelete.length === 0) return
+
+      const count = snippetsToDelete.length
+      const singleSnippet = count === 1 ? snippetsToDelete[0] : null
+
+      setConfirmState({
+        title: singleSnippet ? 'Delete snippet?' : `Delete ${count} snippets?`,
+        message: singleSnippet
+          ? `“${singleSnippet.title}” will be permanently removed from your vault. This cannot be undone.`
+          : `These ${count} snippets will be permanently removed from your vault. This cannot be undone.`,
+        confirmLabel: singleSnippet ? 'Delete snippet' : `Delete ${count} snippets`,
+        tone: 'danger',
+        action: async () => {
+          const results = await Promise.all(
+            snippetsToDelete.map(async (snippet) => {
+              try {
+                const response = await fetch(`/api/snippets/${snippet.id}`, { method: 'DELETE' })
+                return response.ok
+              } catch {
+                return false
+              }
+            })
+          )
+
+          const deletedIds = snippetsToDelete
+            .filter((_, index) => results[index])
+            .map((snippet) => snippet.id)
+
+          if (deletedIds.length > 0) {
+            setSnippets((current) => current.filter((snippet) => !deletedIds.includes(snippet.id)))
+            forget(deletedIds)
+            setSelectedIds((current) => {
+              const next = new Set(current)
+              deletedIds.forEach((id) => next.delete(id))
+              return next
+            })
+            setLastSyncedAt(new Date())
+          }
+
+          if (deletedIds.length === count) {
+            notify('success', `${count} ${pluralize(count, 'snippet')} deleted.`)
+          } else {
+            notify('error', 'Some snippets could not be deleted. Please try again.')
+          }
+
+          if (closeStudioAfter && deletedIds.length > 0) setStudio(null)
+        },
+      })
+    },
+    [forget, notify]
+  )
+
+  const handleConfirm = async () => {
+    if (!confirmState || confirmBusy) return
+
+    setConfirmBusy(true)
+    try {
+      await confirmState.action()
+    } finally {
+      setConfirmBusy(false)
+      setConfirmState(null)
     }
   }
 
-  const makeKeyDownHandler = (
-    getValue: () => string,
-    setValue: (v: string) => void,
-    ref: React.RefObject<HTMLTextAreaElement | null>
-  ) => (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const start = e.currentTarget.selectionStart
-      const end = e.currentTarget.selectionEnd
-      const next = getValue().substring(0, start) + '  ' + getValue().substring(end)
-      setValue(next)
-      setTimeout(() => {
-        if (ref.current) ref.current.selectionStart = ref.current.selectionEnd = start + 2
-      }, 0)
+  const handleSignOut = async () => {
+    try {
+      await getSupabase().auth.signOut()
+      router.push('/login')
+    } catch {
+      notify('error', 'Could not sign out. Please try again.')
     }
   }
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+  const handleRetry = () => {
+    setLoading(true)
+    setError(null)
+    loadSnippets()
+      .catch(() => setError('Could not open your vault. Check your connection and try again.'))
+      .finally(() => setLoading(false))
   }
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === snippets.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(snippets.map(s => s.id)))
+  const emptyState = (() => {
+    if (activeView === 'archive') {
+      return {
+        title: 'Archive is empty',
+        text: 'Snippets you move to the archive will wait here until you restore or delete them.',
+        actionLabel: 'Back to vault',
+        onAction: () => handleViewChange('all'),
+      }
     }
-  }
 
-  const codeEditorStyle: React.CSSProperties = {
-    lineHeight: '1.5',
-    fontSize: '14px',
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-  }
+    if (activeView === 'favorites') {
+      return {
+        title: 'No favorites yet',
+        text: 'Star the snippets you reach for most and they will be pinned here.',
+        actionLabel: 'Browse all snippets',
+        onAction: () => handleViewChange('all'),
+      }
+    }
+
+    if (hasFilters || searchQuery.trim()) {
+      return {
+        title: 'No crates match this scope',
+        text: 'Try a different language, tag, or search phrase. The active scope is shown above the grid.',
+        actionLabel: 'Clear scope',
+        onAction: handleClearScope,
+      }
+    }
+
+    return {
+      title: 'Your vault is empty',
+      text: 'Add your first snippet and start building a searchable workbench for the code you reuse.',
+      actionLabel: 'Create first snippet',
+      onAction: () => setStudio({ mode: 'create' }),
+    }
+  })()
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl">Loading...</div>
+      <div className="vault-loading">
+        <div className="loading-card">
+          <span className="brand-mark" aria-hidden="true">
+            <Icon name="box" size={21} />
+          </span>
+          <span className="spinner" />
+          <span>Opening your vault...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (error && snippets.length === 0) {
+    return (
+      <div className="vault-loading">
+        <div className="empty-state error-state">
+          <span className="empty-icon is-danger">
+            <Icon name="alert" size={24} />
+          </span>
+          <h2 className="empty-title">The vault did not open</h2>
+          <p className="empty-text">{error}</p>
+          <button type="button" className="btn btn-primary" onClick={handleRetry}>
+            <Icon name="refresh" size={14} />
+            Retry
+          </button>
+        </div>
       </div>
     )
   }
 
   if (!user) return null
 
-  const allSelected = snippets.length > 0 && selectedIds.size === snippets.length
-  const someSelected = selectedIds.size > 0
+  const editingSnippet = studio?.mode === 'edit' ? studio.snippet ?? null : null
+  const initialCrateId = editingSnippet
+    ? meta.crates[editingSnippet.id] ?? 'personal-vault'
+    : crateFilter ?? 'personal-vault'
+  const initialDescription = editingSnippet ? meta.descriptions[editingSnippet.id] ?? '' : ''
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <h1 className="text-2xl font-bold text-zinc-900">CodeCrate</h1>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-zinc-600">Welcome, {user.user_metadata?.full_name || user.email}</span>
-              <button onClick={handleSignOut} className="text-sm text-zinc-600 hover:text-zinc-900">
-                Sign Out
-              </button>
+    <div className="app-shell">
+      <Sidebar
+        isOpen={sidebarOpen}
+        activeView={activeView}
+        crateFilter={crateFilter}
+        languageFilter={languageFilter}
+        tagFilter={tagFilter}
+        counts={counts}
+        crates={crateItems}
+        languages={languageItems}
+        popularTags={popularTags}
+        snippetCount={snippets.length}
+        storageBytes={storageBytes}
+        onViewChange={handleViewChange}
+        onCrateSelect={handleCrateSelect}
+        onLanguageSelect={handleLanguageSelect}
+        onTagSelect={handleTagSelect}
+        onAddCrate={handleAddCrate}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
+      )}
+
+      <div className="main-col">
+        <TopBar
+          user={user}
+          query={searchQuery}
+          languageFilter={languageFilter}
+          tagFilter={tagFilter}
+          languages={languageItems}
+          tags={tagItems}
+          onQueryChange={setSearchQuery}
+          onLanguageFilter={setLanguageFilter}
+          onTagFilter={setTagFilter}
+          onNewSnippet={() => setStudio({ mode: 'create' })}
+          onSignOut={() => void handleSignOut()}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onToggleTheme={toggleTheme}
+        />
+
+        <main className="workspace">
+          <div className="workspace-bar">
+            <div className="breadcrumb">
+              <span className="breadcrumb-root">Workspace</span>
+              <span className="breadcrumb-sep">/</span>
+              <h1 className="breadcrumb-current">{viewTitle}</h1>
+              <span className="count-badge">
+                {filteredSnippets.length} {activeView === 'archive' ? 'Archived' : 'Active'}
+              </span>
             </div>
-          </div>
-        </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search + New Snippet */}
-        <div className="mb-8">
-          <div className="flex gap-4 mb-4">
-            <form onSubmit={handleSearch} className="flex-1 flex gap-2">
-              <input
-                type="text"
-                placeholder="Search snippets by title or tags..."
-                className="flex-1 p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-500"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <button type="submit" className="px-6 py-3 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800">
-                Search
-              </button>
-            </form>
-            <button
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              {showCreateForm ? 'Cancel' : 'New Snippet'}
-            </button>
+            {/* <div className="sync-pill">
+              <span className="status-dot" />
+              <span>{lastSyncedAt ? `Index synced ${formatTime(lastSyncedAt)}` : 'Index syncing...'}</span>
+              <span className="sync-meta">
+                {snippets.length} {pluralize(snippets.length, 'crate')} indexed
+              </span>
+            </div> */}
           </div>
 
-          {showCreateForm && (
-            <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
-              <h2 className="text-xl font-semibold mb-4 text-zinc-900">Create New Snippet</h2>
-              <form onSubmit={handleCreateSnippet} className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Title"
-                  className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                />
-                <select
-                  className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  required
-                >
-                  {LANGUAGES.map(l => (
-                    <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  placeholder="Tags (comma-separated)"
-                  className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                />
-                <div className="relative rounded-lg overflow-hidden border border-zinc-700 bg-[#0d1117]">
-                  <div
-                    ref={preRef}
-                    className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto"
-                    style={codeEditorStyle}
-                  >
-                    <pre className="shiki" style={{ backgroundColor: 'transparent' }}>
-                      <code dangerouslySetInnerHTML={{ __html: highlightedCode || '<span></span>' }} />
-                    </pre>
-                  </div>
-                  <textarea
-                    ref={textareaRef}
-                    placeholder="Write your code here..."
-                    className="w-full p-3 h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-transparent placeholder:text-zinc-500"
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    onKeyDown={makeKeyDownHandler(() => content, setContent, textareaRef)}
-                    onScroll={handleScroll}
-                    spellCheck={false}
-                    required
-                    style={{
-                      ...codeEditorStyle,
-                      color: 'rgba(0,0,0,0.1)',
-                      position: 'relative',
-                      backgroundColor: 'transparent',
-                      caretColor: 'white',
-                      WebkitTextFillColor: 'transparent',
-                    }}
+          <Toolbar
+            density={density}
+            sortMode={sortMode}
+            selectedCount={selectedIds.size}
+            allSelected={allSelected}
+            someSelected={someSelected}
+            totalCount={sortedSnippets.length}
+            activeViewIsArchive={activeView === 'archive'}
+            copyStats={copyStats}
+            onDensityChange={setDensity}
+            onSortChange={setSortMode}
+            onToggleSelectAll={handleToggleSelectAll}
+            onExport={handleExport}
+            onBulkArchive={handleBulkArchive}
+            onBulkDelete={handleBulkDelete}
+            onClearSelection={() => setSelectedIds(new Set())}
+          />
+
+          <ScopeBar chips={scopeChips} onClear={handleClearScope} />
+
+          {visibleSnippets.length > 0 ? (
+            <div className={`crate-grid ${density === 'dense' ? 'is-dense' : ''}`}>
+              {visibleSnippets.map((snippet) => {
+                const crateId = meta.crates[snippet.id] ?? 'personal-vault'
+                return (
+                  <SnippetCard
+                    key={snippet.id}
+                    snippet={snippet}
+                    meta={meta}
+                    crateName={crateNames.get(crateId) ?? 'Personal Vault'}
+                    theme={theme}
+                    highlighter={highlighter}
+                    selected={selectedIds.has(snippet.id)}
+                    archived={archivedSet.has(snippet.id)}
+                    favorite={favoriteSet.has(snippet.id)}
+                    activeTag={tagFilter}
+                    onToggleSelect={handleToggleSelect}
+                    onToggleFavorite={toggleFavorite}
+                    onCopy={handleCopy}
+                    onEdit={(item) => setStudio({ mode: 'edit', snippet: item })}
+                    onDuplicate={(item) => void handleDuplicate(item)}
+                    onDelete={(item) => requestDelete([item])}
+                    onToggleArchive={handleToggleArchive}
+                    onTagClick={handleTagSelect}
                   />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                  disabled={creating}
-                >
-                  {creating ? 'Creating...' : 'Create Snippet'}
-                </button>
-              </form>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <span className="empty-icon">
+                <Icon name={activeView === 'archive' ? 'archive' : 'box'} size={25} />
+              </span>
+              <h2 className="empty-title">{emptyState.title}</h2>
+              <p className="empty-text">{emptyState.text}</p>
+              <button type="button" className="btn btn-primary" onClick={emptyState.onAction}>
+                <Icon name={hasFilters ? 'x' : activeView === 'all' ? 'plus' : 'box'} size={14} />
+                {emptyState.actionLabel}
+              </button>
             </div>
           )}
-        </div>
 
-        {/* Bulk actions toolbar */}
-        {snippets.length > 0 && (
-          <div className="flex items-center gap-3 mb-4">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-zinc-600">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleSelectAll}
-                className="w-4 h-4 rounded accent-blue-600"
-              />
-              {allSelected ? 'Deselect all' : 'Select all'}
-            </label>
-            {someSelected && (
-              <button
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-                </svg>
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size} selected`}
-              </button>
-            )}
-          </div>
-        )}
+          <StatusBar
+            page={safePage}
+            totalPages={totalPages}
+            rendered={visibleSnippets.length}
+            total={sortedSnippets.length}
+            storageLabel={formatBytes(storageBytes)}
+            lastSyncedAt={lastSyncedAt}
+            onPageChange={setPage}
+          />
 
-        {/* Snippet grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {snippets.map((snippet) => {
-            let highlightedSnippet = snippet.content
-            if (highlighter) {
-              try {
-                highlightedSnippet = highlighter.codeToHtml(snippet.content, {
-                  lang: snippet.language.toLowerCase(),
-                  theme: isDarkMode ? 'github-dark' : 'github-light',
-                })
-              } catch {
-                highlightedSnippet = `<pre><code>${snippet.content}</code></pre>`
-              }
-            }
+          {/* <div className="workspace-footnote">
+            <span>Showing {filteredSnippets.length} of {snippets.length} snippets</span>
+            <span>·</span>
+            <span>{formatDate(new Date())}</span>
+            <span>·</span>
+            <span>Favorites, notes, and crates are cached locally per user.</span>
+          </div> */}
+        </main>
+      </div>
 
-            const isSelected = selectedIds.has(snippet.id)
-
-            return (
-              <div
-                key={snippet.id}
-                className={`bg-white p-6 rounded-lg shadow-sm border transition-colors ${isSelected ? 'ring-2 ring-blue-500 border-blue-300' : ''}`}
-              >
-                {/* Card header */}
-                <div className="flex items-start justify-between mb-3 gap-2">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(snippet.id)}
-                      className="mt-1 w-4 h-4 flex-shrink-0 rounded accent-blue-600 cursor-pointer"
-                    />
-                    <div className="min-w-0">
-                      <h3 className="text-lg font-semibold text-zinc-900 truncate">{snippet.title}</h3>
-                      <span className="text-sm text-zinc-500">{snippet.language}</span>
-                    </div>
-                  </div>
-
-                  {/* Kebab menu */}
-                  <div className="relative flex-shrink-0" ref={openMenuId === snippet.id ? menuRef : undefined}>
-                    <button
-                      onClick={() => setOpenMenuId(openMenuId === snippet.id ? null : snippet.id)}
-                      className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
-                      aria-label="Options"
-                    >
-                      <KebabIcon />
-                    </button>
-                    {openMenuId === snippet.id && (
-                      <div className="absolute right-0 top-8 z-10 w-36 bg-white border border-zinc-200 rounded-lg shadow-lg py-1">
-                        <button
-                          onClick={() => openEditModal(snippet)}
-                          className="w-full text-left px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11z"/>
-                          </svg>
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSnippet(snippet.id)}
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-                          </svg>
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {snippet.tags.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-1">
-                    {snippet.tags.map((tag, i) => (
-                      <span key={i} className="px-2 py-1 bg-zinc-100 text-zinc-700 text-xs rounded">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div
-                  className="snippet-code text-sm overflow-x-auto rounded"
-                  dangerouslySetInnerHTML={{ __html: highlightedSnippet }}
-                />
-
-                <div className="mt-3 text-xs text-zinc-500">
-                  {new Date(snippet.created_at).toLocaleDateString()}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {snippets.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-zinc-500">
-              {searchQuery ? 'No snippets found for your search.' : 'No snippets yet. Create your first one!'}
-            </p>
-          </div>
-        )}
-      </main>
-
-      {/* Edit Modal */}
-      {editingSnippet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-zinc-900">Edit Snippet</h2>
-              <button
-                onClick={() => setEditingSnippet(null)}
-                className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-md"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                </svg>
-              </button>
-            </div>
-            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
-              <input
-                type="text"
-                placeholder="Title"
-                className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                required
-              />
-              <select
-                className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={editLanguage}
-                onChange={(e) => setEditLanguage(e.target.value)}
-              >
-                {LANGUAGES.map(l => (
-                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                placeholder="Tags (comma-separated)"
-                className="w-full p-3 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-              />
-              <div className="relative rounded-lg overflow-hidden border border-zinc-700 bg-[#0d1117]">
-                <div
-                  ref={editPreRef}
-                  className="absolute top-0 left-0 w-full h-48 p-3 pointer-events-none overflow-auto"
-                  style={codeEditorStyle}
-                >
-                  <pre className="shiki" style={{ backgroundColor: 'transparent' }}>
-                    <code dangerouslySetInnerHTML={{ __html: editHighlightedCode || '<span></span>' }} />
-                  </pre>
-                </div>
-                <textarea
-                  ref={editTextareaRef}
-                  placeholder="Write your code here..."
-                  className="w-full p-3 h-48 font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-transparent placeholder:text-zinc-500"
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={makeKeyDownHandler(() => editContent, setEditContent, editTextareaRef)}
-                  onScroll={handleEditScroll}
-                  spellCheck={false}
-                  required
-                  style={{
-                    ...codeEditorStyle,
-                    color: 'rgba(0,0,0,0.1)',
-                    position: 'relative',
-                    backgroundColor: 'transparent',
-                    caretColor: 'white',
-                    WebkitTextFillColor: 'transparent',
-                  }}
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingSnippet(null)}
-                  className="flex-1 px-4 py-3 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {studio && (
+        <SnippetStudio
+          key={studio.mode === 'edit' ? studio.snippet?.id ?? 'edit' : 'new'}
+          mode={studio.mode}
+          snippet={editingSnippet}
+          crates={crates}
+          initialCrateId={initialCrateId}
+          initialDescription={initialDescription}
+          highlighter={highlighter}
+          theme={theme}
+          saving={saving}
+          onClose={() => setStudio(null)}
+          onSubmit={handleStudioSubmit}
+          onDelete={editingSnippet ? () => requestDelete([editingSnippet], true) : undefined}
+          onNotify={notify}
+        />
       )}
+
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          tone={confirmState.tone}
+          busy={confirmBusy}
+          onCancel={() => {
+            if (!confirmBusy) setConfirmState(null)
+          }}
+          onConfirm={() => void handleConfirm()}
+        />
+      )}
+
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

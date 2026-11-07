@@ -7,6 +7,19 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/'
 
+  const sendToErrorPage = (message: string) =>
+    NextResponse.redirect(
+      `${origin}/auth/auth-code-error?description=${encodeURIComponent(message)}`
+    )
+
+  // Forward any error details Supabase appended to the redirect URL.
+  const upstreamError = searchParams.get('error')
+  if (upstreamError) {
+    const description =
+      searchParams.get('error_description') ?? searchParams.get('error_code') ?? upstreamError
+    return sendToErrorPage(`${upstreamError}: ${description}`)
+  }
+
   if (code) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
@@ -21,7 +34,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}${next}`)
       }
     }
+
+    return sendToErrorPage(error.message)
   }
 
-  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+  return sendToErrorPage('The authorization link did not include a code parameter.')
 }
