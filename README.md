@@ -1,36 +1,47 @@
-
 # CodeCrate
 
-A bookmarking tool for developers to save code snippets with tags and titles. Built with Next.js, Supabase, and Redis.
+A private, searchable workbench for the code you reuse — file snippets into crates, tag them, and copy them back out in seconds. Built with **Next.js 15 (App Router)**, **Supabase**, and **Upstash Redis**.
 
 ## Features
 
-- GitHub authentication via Supabase
-- Save code snippets with titles, languages, and tags
-- Search through snippets by title or tags
-- Redis caching for improved performance
+- **GitHub authentication** via Supabase (PKCE OAuth with cookie-based sessions)
+- **Snippet studio** — create, edit, duplicate, and delete snippets with language-aware syntax highlighting (Shiki, custom vault themes for light and dark mode)
+- **Vault organization** — favorites, recent, archive views, custom crates/collections, descriptions, versions, and copy-count tracking (stored locally per user)
+- **Terminal-style search** — `lang:`, `tag:`, and `crate:` filter tokens, language/tag filter menus, sorting, and grid/dense layout toggles
+- **Bulk actions** — select-all, bulk archive/restore, bulk delete, and JSON export
+- **Upstash Redis caching** — 5-minute list cache and 10-minute search cache, invalidated on every write; degrades gracefully to no-cache when Redis isn't configured
+- **Light & dark themes** — Pretty self explanatory :P
 
 ## Getting Started
 
+### Prerequisites
+
+- Node.js 20+
+- A [Supabase](https://supabase.com) project
+- (Optional) An [Upstash](https://upstash.com/redis) Redis database for caching
+
 ### Environment Variables
 
-Create a `.env.local` file in the root directory with the following variables:
+Create a `.env` file in the root directory (already gitignored) with:
 
 ```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Supabase — safe to expose to the browser (RLS-governed)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
-# Redis Configuration (optional - defaults to localhost)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password
+# Server-only secret key — only needed for admin/RLS-bypass operations
+# SUPABASE_URL=https://your-project.supabase.co
+# SUPABASE_SECRET_KEY=sb_secret_...
+
+# Redis via Upstash (optional — leave unset to run without caching)
+UPSTASH_REDIS_REST_URL=https://your-db.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-rest-token
 ```
 
 ### Supabase Setup
 
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-2. In your Supabase dashboard, go to SQL Editor and run this SQL to create the snippets table:
+1. Create a new project at [supabase.com](https://supabase.com), then in **Settings → API Keys** copy the project URL and publishable key into `.env`.
+2. In the SQL Editor, create the snippets table:
 
 ```sql
 create table snippets (
@@ -46,7 +57,7 @@ create table snippets (
 -- Enable Row Level Security
 alter table snippets enable row level security;
 
--- Create policy so users can only see their own snippets
+-- Policies: users can only touch their own snippets
 create policy "Users can view their own snippets" on snippets
   for select using (auth.uid() = user_id);
 
@@ -60,33 +71,29 @@ create policy "Users can delete their own snippets" on snippets
   for delete using (auth.uid() = user_id);
 ```
 
-3. Enable GitHub authentication in Supabase:
-   - Go to Authentication > Settings
-   - Configure GitHub OAuth with your GitHub app credentials
+3. Enable GitHub authentication under **Authentication → Providers** with your GitHub OAuth app credentials. The GitHub app's callback URL must be `https://<your-project-ref>.supabase.co/auth/v1/callback`.
+4. Under **Authentication → URL Configuration**, allow `http://localhost:3000/api/auth/callback` for local development
 
-### Redis Setup
+### Redis Setup (Optional)
 
-For Redis, you can either:
-- Run Redis locally: `redis-server`
-- Use a cloud Redis service like Redis Cloud or Upstash
-- For development, Redis is optional (the app will work without caching)
+1. Create a free [Upstash Redis](https://upstash.com/redis) database (any region close to you, enable eviction so the cache degrades gracefully at the size cap).
+2. Copy the REST URL and token into `.env`.
 
-### Installation
+Without these variables the app still works, the cache layer just becomes a pass-through. If Redis is configured but unavailable, requests fall back to Supabase instead of failing.
+
+### Installation & Development
 
 ```bash
 npm install
+npm run dev          # http://localhost:3000
 ```
 
-### Running the Development Server
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to see the application.
+Other scripts: `npm run build` (production build), `npm run start`, `npm run lint`.
 
 ## Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Supabase Documentation](https://supabase.com/docs)
-- [Redis Documentation](https://redis.io/docs)
+- [Supabase API Keys](https://supabase.com/docs/guides/getting-started/api-keys)
+- [Upstash Redis Documentation](https://upstash.com/docs/redis)
+- [Shiki Documentation](https://shiki.style)
