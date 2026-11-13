@@ -41,7 +41,6 @@ export default function LoginPage() {
           </span>
           <div>
             <div className="login-wordmark">CodeCrate</div>
-            {/* <div className="login-brand-meta">machined snippet vault</div> */}
           </div>
         </div>
 
@@ -51,11 +50,6 @@ export default function LoginPage() {
       <main className="login-main">
         <section className="login-panel">
           <div className="login-story">
-            <span className="login-kicker">
-              {/* <span className="field-dot is-amber" />
-              Developer workbench */}
-            </span>
-
             <h1 className="login-title">
               Your code,
               <br />
@@ -126,10 +120,6 @@ export default function LoginPage() {
           </div>
 
           <div className="login-card">
-            <span className="login-kicker">
-              {/* <span className="field-dot is-cyan" />
-              Secure access */}
-            </span>
 
             <h2 className="login-card-title">Open your vault</h2>
             <p className="login-card-text">
@@ -179,7 +169,7 @@ export default function LoginPage() {
             </ul>
 
             <p className="login-fineprint">
-              CodeCrate keeps the vault weird and the code reusable. No newsletters, no
+              CodeCrate keeps the vault easy and the code reusable. No newsletters, no
               telemetry, no rewriting the same helper twice.
             </p>
           </div>
@@ -187,8 +177,8 @@ export default function LoginPage() {
       </main>
 
       <footer className="login-footer">
-        <span>CodeCrate · V2.4</span>
-        <span>Built for developers who hate rewriting the same thing twice.</span>
+        <span>CodeCrate · V1.0</span>
+        <span>Built for devs who hate rewriting the same thing twice.</span>
       </footer>
     </div>
   )
