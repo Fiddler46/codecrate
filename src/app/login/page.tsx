@@ -164,7 +164,7 @@ export default function LoginPage() {
               </li>
               <li>
                 <Icon name="database" size={13} />
-                <span>Favorites, crates, and notes are cached locally in this browser.</span>
+                <span>Favorites, crates, and notes are stored safely in the cloud.</span>
               </li>
             </ul>
 

@@ -313,7 +313,7 @@ export function Sidebar({
         <div className="storage-head">
           <span className="storage-title">
             <Icon name="database" size={12} />
-            Local Storage
+            Storage
           </span>
           <span className="storage-percent">{storageLabel}% used</span>
         </div>
