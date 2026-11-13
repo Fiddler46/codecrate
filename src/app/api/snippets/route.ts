@@ -21,9 +21,9 @@ export async function GET(request: NextRequest) {
       // Check cache for search results
       const cacheKey = CACHE_KEYS.SNIPPET_SEARCH(user.id, search)
       const cachedResults = await redis.get(cacheKey)
-      
+
       if (cachedResults) {
-        return NextResponse.json(JSON.parse(cachedResults))
+        return NextResponse.json(cachedResults)
       }
 
       // Search snippets by title or tags
@@ -38,14 +38,14 @@ export async function GET(request: NextRequest) {
 
       snippets = data
       // Cache search results
-      await redis.setex(cacheKey, CACHE_TTL.SEARCH_RESULTS, JSON.stringify(snippets))
+      await redis.setex(cacheKey, CACHE_TTL.SEARCH_RESULTS, snippets)
     } else {
       // Check cache for user snippets
       const cacheKey = CACHE_KEYS.USER_SNIPPETS(user.id)
       const cachedSnippets = await redis.get(cacheKey)
-      
+
       if (cachedSnippets) {
-        return NextResponse.json(JSON.parse(cachedSnippets))
+        return NextResponse.json(cachedSnippets)
       }
 
       // Get all user snippets
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 
       snippets = data
       // Cache user snippets
-      await redis.setex(cacheKey, CACHE_TTL.USER_SNIPPETS, JSON.stringify(snippets))
+      await redis.setex(cacheKey, CACHE_TTL.USER_SNIPPETS, snippets)
     }
 
     return NextResponse.json(snippets)
