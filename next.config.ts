@@ -10,7 +10,6 @@ const nextConfig: NextConfig = {
         '**/node_modules/**',
         '**/.next/**',
         '**/.cache/**',
-        '**/.replit',
         '**/.config/**',
         '**/.upm/**',
         '**/.agents/**',
@@ -20,7 +19,7 @@ const nextConfig: NextConfig = {
     }
     return config
   },
-  allowedDevOrigins: ["http://localhost:3000", "b4bb9115-4688-40f3-9972-96c0316daff8-00-2hovsp9rdmwp4.pike.replit.dev"],
+  allowedDevOrigins: ["http://localhost:3000"],
 };
 
 export default nextConfig;
